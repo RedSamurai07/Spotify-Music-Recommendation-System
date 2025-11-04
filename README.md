@@ -6,16 +6,18 @@
 - [Goal](goal)
 - [Data Structure](data-structure)
 - [Tools](tools)
-- [Data Analysis](#data-analysis)
+- [Analysis](#analysis)
 - [Insights](insights)
 - [Recommendations](recommendations)
 
 ### Project Overview
-- This project focuses on analyzing a personal Spotify listening history dataset to uncover individual music consumption patterns, preferences, and trends over time. Understanding these habits can provide insights into musical taste evolution, preferred listening times, and the influence of factors like shuffle or platform on listening behavior. This analysis can be valuable for personal reflection, or even for developers looking to understand user behavior on streaming platforms.
+- The system's objective is to define the user's unique musical taste profile by deeply analyzing individual consumption patterns, preferences, and behavioral trends (such as average listening duration, total listen counts, and the influence of factors like shuffle or platform).
+
+- This analysis provides the necessary features to train a Content-Based Filtering model, which will then accurately forecast and suggest new songs and artists. The ultimate value of this model is creating a highly personalized music discovery tool that maximizes user engagement and provides a foundational understanding of user behavior for streaming platform optimization.
   
 ### Executive Summary
-- This analysis of personal Spotify listening history provides a comprehensive overview of user engagement patterns, content preferences, and behavioral trends, offering valuable insights for enhancing the user experience and optimizing content strategies.
-
+- This analysis transforms raw listening history into actionable insights for the development, training, and deployment of a personalized Content-Based Recommendation System. The core focus is leveraging individual behavior to engineer a highly accurate predictive model that maximizes music discovery and user engagement.
+  
 1. **User Engagement & Content Strategy**:
 - This analysis offers crucial information on peak listening hours and days, enabling targeted content releases and promotional activities. It highlights the most and least frequently played artists and tracks, identifying highly engaging content and areas where user interest might wane. Understanding patterns of skipped songs and reasons for starting/ending tracks provides insights into user satisfaction and content discovery mechanisms, guiding strategies to improve content curation and flow.
 
@@ -81,10 +83,10 @@ The objective of this analysis is to:
 ### Tools
 - Excel : Google Sheets - Check for data types, Table formatting
 - SQL : Big QueryStudio - Querying, manipulating, and managing data in relational databases in 
-- Python: Google Colab - Data Preparation and pre-processing, Exploratory Data Analysis, Descriptive Statistics, inferential Statistics, Data manipulation and Analysis(Numpy, Pandas),Visualization (Matplotlib, Seaborn), Feature Engineering, Hypothesis Testing.
+- Python: Google Colab - Data Preparation and pre-processing, Exploratory Data Analysis, Descriptive Statistics, inferential Statistics, Data manipulation and Analysis(Numpy, Pandas),Visualization (Matplotlib, Seaborn), Feature Engineering, Hypothesis Testing, Cosine Similarity, Data Annotation, Training & testing data
 
-### Data Analysis
-1). Python
+### Analysis
+**1). Exploratory Data Analysis + Hypothesis Testing**
 - Importing Libraries
 ``` python
   import numpy as np
@@ -821,7 +823,142 @@ A.  User Engagement & Listening Behavior
 ```
 ![image](https://github.com/user-attachments/assets/cd1d228f-2157-4cb5-8ba1-ded6a8c8e1fa)
 
-2. SQL
+**2). Model Deployment**
+
+Libraries
+``` python
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics.pairwise import cosine_similarity
+import warnings
+warnings.filterwarnings('ignore')
+```
+
+Data info
+``` python
+df = pd.read_csv('Spotify_history.csv', encoding='latin-1')
+df.head()
+```
+<img width="1628" height="288" alt="image" src="https://github.com/user-attachments/assets/42b03bab-2f51-415c-a415-cbd6b785bd49" />
+
+``` python
+df.info()
+```
+<img width="341" height="489" alt="image" src="https://github.com/user-attachments/assets/d8255259-8a09-4719-abf1-712ddfbd82b2" />
+
+Shape of Data
+``` python
+df.shape
+```
+<img width="223" height="36" alt="image" src="https://github.com/user-attachments/assets/cdb2e8f2-393c-40eb-9b04-028fb3ae748e" />
+
+``` python
+df.drop(columns= 'Column 1', inplace=True)
+df.head()
+```
+
+<img width="1628" height="276" alt="image" src="https://github.com/user-attachments/assets/fca4267f-37dc-45c2-a548-801f631cc9c8" />
+
+``` python
+meaningful_listens_df = df[df['ms_played'] >= 60000].copy()
+
+song_features = meaningful_listens_df.groupby(['artist_name', 'track_name']).agg(
+    avg_ms_played=('ms_played', 'mean'),
+    listen_count=('ms_played', 'size')
+).reset_index()
+
+track_metadata = df[['artist_name', 'track_name', 'popularity', 'release_year']].drop_duplicates(
+    subset=['artist_name', 'track_name'], keep='last')
+```
+
+``` python
+model_df = pd.merge(song_features, track_metadata, on=['artist_name', 'track_name'], how='left')
+model_df.dropna(inplace=True)
+model_df.reset_index(drop=True, inplace=True)
+model_df.head()
+```
+<img width="785" height="169" alt="image" src="https://github.com/user-attachments/assets/933e81cf-c9b5-42af-8b12-1e80263ec176" />
+
+``` python
+FEATURE_COLS = ['avg_ms_played', 'popularity', 'release_year', 'listen_count']
+X = model_df[FEATURE_COLS]
+```
+``` python
+scaler = MinMaxScaler()
+X_scaled = scaler.fit_transform(X)
+```
+### **Spotify Recommendations by `track_name`**
+
+``` python
+cosine_sim = cosine_similarity(X_scaled)
+indices = pd.Series(model_df.index, index=model_df['track_name']).drop_duplicates()
+```
+``` python
+def get_recommendations(title, N=10, data = model_df, cosine_sim=cosine_sim, indices=indices):
+    if title not in indices.index:
+        print(f"❌ Error: Song '{title}' not found in the meaningful listen history.")
+        return pd.DataFrame()
+
+    
+    idx = indices[title]
+    sim_scores = list(enumerate(cosine_sim[idx]))
+    sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
+
+    sim_scores = sim_scores[1:N+1]
+    song_indices = [i[0] for i in sim_scores]
+
+    recommendations = data.iloc[song_indices].copy()
+    recommendations['Similarity_Score'] = [i[1] for i in sim_scores]
+
+    return recommendations[['artist_name', 'track_name', 'Similarity_Score', 'popularity', 'release_year']]
+```
+``` python
+new_recommendations = get_recommendations('Comfortably Numb', N=10)
+new_recommendations = new_recommendations.sort_values(by='popularity', ascending=False) 
+new_recommendations
+```
+<img width="759" height="261" alt="image" src="https://github.com/user-attachments/assets/2b11a94a-e36b-4150-8c3a-abe3750719a8" />
+
+I had used the track_name as 'Comfortably Numb' from the artist_name is pink floyd
+
+
+###**Spotify Recommendations by `artist_name` & `track_name`**
+``` python
+model_df['combined_key'] = model_df['artist_name'] + ' - ' + model_df['track_name']
+indices = pd.Series(model_df.index, index=model_df['combined_key']).drop_duplicates()
+```
+``` python
+def get_recommendations_combined(artist, title, N=10, data=model_df, cosine_sim=cosine_sim, indices=indices):
+    search_key = artist + ' - ' + title
+    if search_key not in indices.index:
+        print(f"❌ Error: Song '{title}' by '{artist}' not found in the meaningful listen history.")
+        return pd.DataFrame()
+
+    idx = indices[search_key]
+    sim_scores = list(enumerate(cosine_sim[idx]))
+    sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
+    sim_scores = sim_scores[1:N+1]
+    song_indices = [i[0] for i in sim_scores]
+
+    recommendations = data.iloc[song_indices].copy()
+    recommendations['Similarity_Score'] = [i[1] for i in sim_scores]
+
+    return recommendations[['artist_name', 'track_name', 'Similarity_Score', 'popularity', 'release_year']]
+```
+``` python
+recommendations_df = get_recommendations_combined('John Mayer', 'Wild Blue', N=10)
+recommendations_df = recommendations_df.sort_values(by = 'popularity', ascending = False)
+recommendations_df
+```
+<img width="700" height="262" alt="image" src="https://github.com/user-attachments/assets/c931995a-5008-4ee7-97ea-36caebdc9b5f" />
+
+I had used artist_name as 'John Mayer' and track_name as 'Wild Blue'
+
+
+**3). SQL**
    
 A). **User Engagement & Listening Behavior**
 
@@ -1124,6 +1261,10 @@ Fleming)
 - Average skip rates by release year highest was on 2004, 2008, 2012.
 - Total listening time by users on plstforms were more on Android, cast to device and IOS.
 
+- The system doesn't rely on other users' data. Instead, it creates a unique "feature profile" for every song in your history, incorporating external factors (like popularity and release_year) and, crucially, your personal engagement metrics (avg_ms_played and listen_count).
+
+- Every song is treated as a numerical vector in a multi-dimensional space (where each dimension is a feature like popularity, avg_ms_played, etc.). Cosine Similarity calculates the cosine of the angle between the vector of your searched song and the vector of every other song.
+   
 ### Recommendations
 - Deep Personalization: Develop highly granular user profiles that extend beyond genre to include attributes like tempo, mood, and instrumentation preferences. This enables the recommendation algorithm to suggest content that genuinely resonates with individual users, considering their listening context (time of day, platform) and incorporating explicit feedback.
 
@@ -1140,3 +1281,7 @@ Fleming)
 - Content Diversification: Expand beyond music to include podcasts, audiobooks, and live events, while also offering exclusive content to premium subscribers, providing more reasons for users to engage.
 
 - Gamification & Feedback: Implement gamified elements like challenges, rewards, and achievements to encourage consistent engagement. Crucially, establish robust user feedback mechanisms, both in-app and through surveys, supported by responsive customer service, to continuously understand and address user needs.
+
+- When you search with an Artist Name and Track Name, the system identifies that specific song's profile and recommends the top 10 other songs whose numerical profiles are most similar to it.
+  
+- A score close to $1.0$ means the two songs' vectors are pointing in nearly the same direction, indicating high similarity in their underlying features. A score close to $0.0$ means low similarity.
