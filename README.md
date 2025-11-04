@@ -1,4 +1,4 @@
-# Spotify Stream Analysis
+# Spotify Music Recommendation System
 
 ## Table of contents
 - [Project Overview](#project-overview)
